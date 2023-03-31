@@ -4,13 +4,15 @@
 #include <ESP8266WiFi.h> // Importa a Biblioteca ESP8266WiFi
 #include <PubSubClient.h> // Importa a Biblioteca PubSubClient
  
-//defines:
-//defines de id mqtt e tópicos para publicação e subscribe
+// Defines do ID MQTT e Tópicos para Publish/Subscribe
 #define TOPICO_SUBSCRIBE    "ENV/ELLS0404"     //tópico MQTT de escuta
 #define TOPICO_PUBLISH      "REC/ELLS0404"     //tópico MQTT de envio de informações para Broker                                            
-#define TOPICO_PUBLISH_IP   "REC/ELLS0404_IP"   
-#define ID_MQTT             "ELLS0404"         //id mqtt (para identificação de sessão)
-                              
+#define ID_MQTT             "ELLS0404"         // ID MQTT - Nome do ANDON p/ identificar a sessão.
+
+/* Esses dois abaixo ainda não foram implementados pois precisam de estudo.
+O objetivo final será enviar também o IP e o MAC junto do ID para o MQTT Listener. */
+#define TOPICO_PUBLISH_IP   "REC/ELLS0404_IP"   // Ainda não utilizado e Implementado.
+#define TOPICO_PUBLISH_MAC   "REC/ELLS0404_MAC"   // Ainda não utilizado e Implementado.                              
  
 //defines - mapeamento de pinos do NodeMCU
 #define D0    16
@@ -35,19 +37,15 @@ int counwf = 0;
 bool flagwf = false;
 char IP = ''
 
-
-
-
-
-// MQTT
-const char* BROKER_MQTT = "andon.arotubi.com.br"; //URL do broker MQTT que se deseja utilizar
+// URL do MQTT
+const char* BROKER_MQTT = "andon.arotubi.com.br"; // URL do Broker MQTT [IP: 192.168.1.97]
 int BROKER_PORT = 1883; // Porta do Broker MQTT
-
  
-//Variáveis e objetos globais
-WiFiClient espClient; // Cria o objeto espClient
-PubSubClient MQTT(espClient); // Instancia o Cliente MQTT passando o objeto espClient
-char EstadoSaida = '2';  //variável que armazena o estado atual da saída
+// Variáveis e objetos globais
+WiFiClient espClient; // Cria o objeto espClient usando o WiFiClient da lib 'ESP8266WiFi'
+PubSubClient MQTT(espClient); // Instancia o Cliente MQTT e Passa o Objeto 'espClient'
+
+char EstadoSaida = '2';  // Variável que armazena o estado atual da saída
   
 //Prototypes
 void initSerial();
@@ -103,26 +101,25 @@ void initWiFi()
     reconectWiFi();
 }
   
-//Função: inicializa parâmetros de conexão MQTT(endereço do 
-//        broker, porta e seta função de callback)
-//Parâmetros: nenhum
-//Retorno: nenhum
+// Função: Inicializa parâmetros de conexão MQTT( Endereço do 
+//        broker, porta e função de callback)
+// Parâmetros: nenhum
+// Retorno: nenhum
 void initMQTT() 
 {
-    MQTT.setServer(BROKER_MQTT, BROKER_PORT);   //informa qual broker e porta deve ser conectado
-    MQTT.setCallback(mqtt_callback);            //atribui função de callback (função chamada quando qualquer informação de um dos tópicos subescritos chega)
+    MQTT.setServer(BROKER_MQTT, BROKER_PORT);   // Porta e Broker do MQTT para se Conectar
+    MQTT.setCallback(mqtt_callback);            // Função de callback - Roda quando qualquer informação de tópicos 'subscribed' chega
 }
   
-//Função: função de callback 
-//        esta função é chamada toda vez que uma informação de 
-//        um dos tópicos subescritos chega)
-//Parâmetros: nenhum
-//Retorno: nenhum
+// Função: Função de Callback do MQTT
+//         Função chamada toda vez que uma informação de tópico subescritos chega.
+// Parâmetros: nenhum
+// Retorno: nenhum
 void mqtt_callback(char* topic, byte* payload, unsigned int length) 
 {
     String msg;
  
-    //obtem a string do payload recebido
+    // Obter a string do payload recebido
     for(int i = 0; i < length; i++) 
     {
        char c = (char)payload[i];
@@ -135,7 +132,7 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length)
         EstadoSaida = '1';
     }
  
-    //verifica se deve colocar nivel alto de tensão na saída D0:
+    // Verifica se deve colocar nivel alto de tensão na saída D0:
     if (msg.equals("D"))
     {
         digitalWrite(D0, HIGH);
@@ -167,10 +164,28 @@ void reconnectMQTT()
         }
     }
 }
-  
-//Função: reconecta-se ao WiFi
+
+ 
+//Função: envia ao Broker o estado atual do output 
 //Parâmetros: nenhum
 //Retorno: nenhum
+void EnviaEstadoOutputMQTT(void)
+{
+    if (EstadoSaida == '0')
+      MQTT.publish(TOPICO_PUBLISH, "D");
+    if (EstadoSaida == '1')
+      MQTT.publish(TOPICO_PUBLISH, "L");
+    if (EstadoSaida == '2')
+        MQTT.publish(TOPICO_PUBLISH, "R"); // se foi reiniciado manda R para receber estado atual
+        MQTT.publish(TOPICO_PUBLISH_IP, IP);
+ 
+    //Serial.println("- Estado da saida D0 enviado ao broker!");
+    delay(500);
+}
+
+// Função: Reconecta-se ao WiFi
+// Parâmetros: nenhum
+// Retorno: nenhum
 void reconectWiFi() 
 {
     //se já está conectado a rede WI-FI, nada é feito. 
@@ -240,23 +255,6 @@ void VerificaConexoesWiFIEMQTT(void)
     
     }
     
-}
- 
-//Função: envia ao Broker o estado atual do output 
-//Parâmetros: nenhum
-//Retorno: nenhum
-void EnviaEstadoOutputMQTT(void)
-{
-    if (EstadoSaida == '0')
-      MQTT.publish(TOPICO_PUBLISH, "D");
-    if (EstadoSaida == '1')
-      MQTT.publish(TOPICO_PUBLISH, "L");
-    if (EstadoSaida == '2')
-        MQTT.publish(TOPICO_PUBLISH, "R"); // se foi reiniciado manda R para receber estado atual
-        MQTT.publish(TOPICO_PUBLISH_IP, IP);
- 
-    //Serial.println("- Estado da saida D0 enviado ao broker!");
-    delay(500);
 }
 
 void AvisoButton(void)
