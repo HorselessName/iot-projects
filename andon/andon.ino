@@ -11,8 +11,8 @@
 
 /* Esses dois abaixo ainda não foram implementados pois precisam de estudo.
 O objetivo final será enviar também o IP e o MAC junto do ID para o MQTT Listener. */
-#define TOPICO_PUBLISH_IP   "REC/ELLS0404_IP"   // Ainda não utilizado e Implementado.
-#define TOPICO_PUBLISH_MAC   "REC/ELLS0404_MAC"   // Ainda não utilizado e Implementado.                              
+#define TOPICO_PUBLISH_IP   "ZBX/ELLS0404_IP"   // Ainda não utilizado e Implementado.
+#define TOPICO_PUBLISH_MAC   "ZBX/ELLS0404_MAC"   // Ainda não utilizado e Implementado.                              
  
 //defines - mapeamento de pinos do NodeMCU
 #define D0    16
@@ -31,6 +31,9 @@ O objetivo final será enviar também o IP e o MAC junto do ID para o MQTT Liste
 // WIFI
 const char* SSID = "ANDON"; // SSID / nome da rede WI-FI que deseja se conectar
 const char* PASSWORD = "andon@aro"; // Senha da rede WI-FI que deseja se conectar
+
+const char* arduino_mac = '';
+const char* arduino_ip = '';
 
 int quant = 0;
 int counwf = 0;
@@ -228,10 +231,10 @@ void reconectWiFi()
     Serial.print(SSID);
     Serial.println("IP obtido: ");
     Serial.println(WiFi.localIP());
-    IP  = WiFi.localIP();
 
 
     
+
 }
  
 //Função: verifica o estado das conexões WiFI e ao broker MQTT. 
