@@ -1,316 +1,315 @@
-//Programa: NodeMCU e MQTT - Controle e Monitoramento IoT
-//Autor: DANILO
-// Ruam 
-#include <ESP8266WiFi.h> // Importa a Biblioteca ESP8266WiFi
+// Programa: NodeMCU e MQTT - Controle e Monitoramento IoT
+// Autores: Danilo Rodrigues e Raul Chiarella
+
+#include <ESP8266WiFi.h>  // Importa a Biblioteca ESP8266WiFi
 #include <PubSubClient.h> // Importa a Biblioteca PubSubClient
- 
-// Defines do ID MQTT e Tópicos para Publish/Subscribe
-#define TOPICO_SUBSCRIBE    "ENV/ELLS0404"     //tópico MQTT de escuta
-#define TOPICO_PUBLISH      "REC/ELLS0404"     //tópico MQTT de envio de informações para Broker                                            
-#define ID_MQTT             "ELLS0404"         // ID MQTT - Nome do ANDON p/ identificar a sessão.
 
-/* Esses dois abaixo ainda não foram implementados pois precisam de estudo.
-O objetivo final será enviar também o IP e o MAC junto do ID para o MQTT Listener. */
-#define TOPICO_PUBLISH_IP   "ZBX/ELLS0404_IP"   // Ainda não utilizado e Implementado.
-#define TOPICO_PUBLISH_MAC   "ZBX/ELLS0404_MAC"   // Ainda não utilizado e Implementado.                              
- 
-//defines - mapeamento de pinos do NodeMCU
-#define D0    16
-#define D1    5
-#define D2    4
-#define D3    0
-#define D4    2
-#define D5    14
-#define D6    12
-#define D7    13
-#define D8    15
-#define D9    3
-#define D10   1
- 
- 
-// WIFI
-const char* SSID = "ANDON"; // SSID / nome da rede WI-FI que deseja se conectar
-const char* PASSWORD = "andon@aro"; // Senha da rede WI-FI que deseja se conectar
+/* ----- Defines ----- */
+#define TOPICO_SUBSCRIBE    "ENV/BCTA6969"                      // Topico de Escuta
+#define TOPICO_PUBLISH      "REC/BCTA6969"                      // Topico de Envio
+#define MQTT_CLIENT_NAME    "BCTA6969"                          // ID MQTT p/ identificar a sessão.
+#define MQTT_TOPIC_IP_MAC   "REC/" MQTT_CLIENT_NAME "/_ip_mac"  // Topico de Envio do IP e MAC
+#define RELE                16                                  // GPIO16 - PIN D0
+#define BUTTON              14                                  // GPIO14 - PIN D5
+#define RST_PIN             12                                  // GPIO12 - PIN D6
 
-const char* arduino_mac = '';
-const char* arduino_ip = '';
+/* ----- Constantes ----- */
+const char* ssid = "ANDON";                       // Nome da rede WI-FI que deseja se conectar
+const char* password = "andon@aro";               // Senha da rede WI-FI que deseja se conectar
+const char* mqtt_server = "andon.alufrost.com";   // URL do Broker MQTT [IP: 192.168.1.97]
+const int mqtt_port = 1883;                       // Porta do Broker MQTT
 
-int quant = 0;
-int counwf = 0;
-bool flagwf = false;
-char IP = ''
+/* ----- Global Variables ----- */
+char estado_da_saida = '2';                       // Variável que armazena o estado atual da saída.
+int tempo_pressionado = 0;                        // Utilizado para calcular pressionada dos botões
 
-// URL do MQTT
-const char* BROKER_MQTT = "andon.arotubi.com.br"; // URL do Broker MQTT [IP: 192.168.1.97]
-int BROKER_PORT = 1883; // Porta do Broker MQTT
- 
-// Variáveis e objetos globais
-WiFiClient espClient; // Cria o objeto espClient usando o WiFiClient da lib 'ESP8266WiFi'
-PubSubClient MQTT(espClient); // Instancia o Cliente MQTT e Passa o Objeto 'espClient'
+/* ----- Controllers ----- */
+WiFiClient WIFI_CONTROLLER;
+PubSubClient MQTT_CONTROLLER(WIFI_CONTROLLER);
 
-char EstadoSaida = '2';  // Variável que armazena o estado atual da saída
-  
-//Prototypes
+/* ----- Prototypes ----- */
 void initSerial();
+void initOutput();
 void initWiFi();
 void initMQTT();
-void reconectWiFi(); 
 void mqtt_callback(char* topic, byte* payload, unsigned int length);
-void VerificaConexoesWiFIEMQTT(void);
-void InitOutput(void);
- 
+void publicarTopicos();
+void enviarStatusInicial();
+void enviarStatusBotao();
+void enviarIpMac_Arduino();
+void desligarRele();
+void ligarRele();
+void rebootESP();
+void VerificaConexoes();
+void StatusBotao();
+
 /* 
- *  Implementações das funções
+ *  Funções Executadas quando o Arduino Liga.
  */
 void setup() 
 {
-    //inicializações:
-    InitOutput();
-    initSerial();
-    initWiFi();
-    initMQTT();
-    digitalWrite(D0, LOW); //inicia o rele desligado
+  // Functions that Execute when Arduino is Turned On
+  initSerial();
+  initOutput();
+  initWiFi();
+  initMQTT();
+  desligarRele();  // Inicio com o RELE desligado.
 }
 
 void loop() 
 {   
-   // Serial.println(digitalRead(D0));
-    VerificaConexoesWiFIEMQTT();
-    AvisoButton();
-    EnviaEstadoOutputMQTT();
-    MQTT.loop();
+  // Functions that Loop
+  VerificaConexoes();
+  StatusBotao();
+  publicarTopicos();  // Publica o Status do Botão e o IP, MAC.
+  MQTT_CONTROLLER.loop();
 }
-  
-//Função: inicializa comunicação serial com baudrate 115200 (para fins de monitorar no terminal serial 
-//        o que está acontecendo.
-//Parâmetros: nenhum
-//Retorno: nenhum
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void initSerial() 
 {
     Serial.begin(115200);
+    delay(1000);
 }
- 
-//Função: inicializa e conecta-se na rede WI-FI desejada
-//Parâmetros: nenhum
-//Retorno: nenhum
-void initWiFi() 
+
+/* Reference: https://www.arduino.cc/reference/en/language/functions/digital-io/pinmode/ */
+void initOutput()
 {
-    delay(10);
-    Serial.println("------Conexao WI-FI------");
-    Serial.print("Conectando-se na rede: ");
-    Serial.println(SSID);
-    Serial.println("Aguarde");
-     
-    reconectWiFi();
+    /* IMPORTANTE: No caso do LED instalado na placa, ele é acionado com lógica invertida. 
+    Quando enviar uma saída do tipo HIGH, a LED apaga, e ao enviar a saída do tipo LOW, o LED acende. */
+
+    pinMode(RELE, OUTPUT);
+    digitalWrite(RELE, HIGH);  
+    pinMode(BUTTON, INPUT_PULLUP); 
+
+    // Seto o PIN de Reset pois vai enviar um sinal para o RST PIN
+    pinMode(RST_PIN, OUTPUT);
+    digitalWrite(RST_PIN, HIGH);
 }
-  
-// Função: Inicializa parâmetros de conexão MQTT( Endereço do 
-//        broker, porta e função de callback)
-// Parâmetros: nenhum
-// Retorno: nenhum
-void initMQTT() 
-{
-    MQTT.setServer(BROKER_MQTT, BROKER_PORT);   // Porta e Broker do MQTT para se Conectar
-    MQTT.setCallback(mqtt_callback);            // Função de callback - Roda quando qualquer informação de tópicos 'subscribed' chega
+
+/* Função:  Conexão Inicial no Wifi
+ *          Tenta por 15 segundos, caso não dê certo, tenta um reboot.
+ * Parâmetros: Nenhum
+ * Retorno: Nenhum
+ */
+void initWiFi(){
+  Serial.println("");
+  Serial.println("----- Conexão WiFi -----");
+  delay(150);
+  WiFi.begin(ssid, password);
+  delay(150);
+  int tentativas = 0, segundos = 15 * 1000, milisegundos = 200;  // Tentativas X (Segundos / Delay)
+  while (WiFi.status() != WL_CONNECTED && tentativas < segundos) {
+    // Piscar o LED a cada loop do While.
+    if(digitalRead(D0) == HIGH){
+      digitalWrite(D0, LOW); 
+      } else {
+        digitalWrite(D0, HIGH); 
+        }
+    tentativas++;
+    Serial.print(".");
+
+    if (WiFi.status() == WL_CONNECTED) break;
+    delay(milisegundos);
+  }
+
+  if (tentativas == segundos/milisegundos) rebootESP();
+  String ip = WiFi.localIP().toString();
+  String mac = WiFi.macAddress();
+
+  // WiFi Connected - Serial Prints.
+  if (ip != "0.0.0.0") Serial.println(" -> WiFi connected! IP: " + ip + ", MAC: " + mac);
 }
-  
-// Função: Função de Callback do MQTT
-//         Função chamada toda vez que uma informação de tópico subescritos chega.
-// Parâmetros: nenhum
-// Retorno: nenhum
+
+////////////////////////////////////////  MQTT - Funções Relacionadas ao MQTT  ////////////////////////////////////////
+/* Função: 	Configura e utiliza a Controller.
+			Faz e mantém a conexão com o MQTT Broker usando a Controller.
+      Tenta por 15 segundos, caso não dê certo, tenta um reboot.
+ * Parâmetros: nenhum
+ * Retorno: Nenhum */
+void initMQTT(){
+  Serial.println("");
+  Serial.println("----- Conexão MQTT Broker -----");
+  delay(150);
+  MQTT_CONTROLLER.setServer(mqtt_server, mqtt_port);
+  MQTT_CONTROLLER.setCallback(mqtt_callback);   // Topic Listener
+  delay(150);
+  Serial.print("Status MQTT Broker: ");
+  Serial.println(MQTT_CONTROLLER.connected());
+  int tentativas = 0, segundos = 15 * 1000, milisegundos = 200;  // Tentativas X (Segundos / Delay)
+  while (!MQTT_CONTROLLER.connected()) {
+	  tentativas++;
+	  Serial.print(".");
+	  // Conectar o MQTT Client no MQTT Broker.
+    if (MQTT_CONTROLLER.connect(MQTT_CLIENT_NAME)) MQTT_CONTROLLER.subscribe(TOPICO_SUBSCRIBE);  // Se inscrever no Topico de Escuta.
+	  if (MQTT_CONTROLLER.connected()) return;  // Sair do método
+    if (tentativas == segundos/milisegundos) break;  // Sair do loop
+	  delay(milisegundos);
+	}
+
+  // Entra aqui se saiu do loop e não do método.
+	rebootESP();
+}
+
+/* Função:      Implementa a Lógica de Tratativa da Mensagem do Tópico.
+ * Parâmetros:  Topico, Payload (Mensagem do Tópico em Formato Binário) e Length.
+ * Status:      - Estado de Saída 0: O topico inscrito foi avisado que o botão do ANDON foi pressionado.
+ *              - Estado de Saída 1: O topico inscrito recebeu uma mensagem para desligar a sirene.
+ */
 void mqtt_callback(char* topic, byte* payload, unsigned int length) 
 {
-    String msg;
- 
-    // Obter a string do payload recebido
-    for(int i = 0; i < length; i++) 
-    {
-       char c = (char)payload[i];
-       msg += c;
-    }
-   
-    if (msg.equals("L"))
-    {
-        digitalWrite(D0, LOW);
-        EstadoSaida = '1';
-    }
- 
-    // Verifica se deve colocar nivel alto de tensão na saída D0:
-    if (msg.equals("D"))
-    {
-        digitalWrite(D0, HIGH);
-        EstadoSaida = '0';
-    }
-     
-}
-  
-//Função: reconecta-se ao broker MQTT (caso ainda não esteja conectado ou em caso de a conexão cair)
-//        em caso de sucesso na conexão ou reconexão, o subscribe dos tópicos é refeito.
-//Parâmetros: nenhum
-//Retorno: nenhum
-void reconnectMQTT() 
-{
-    while (!MQTT.connected()) 
-    {
-        Serial.print("* Tentando se conectar ao Broker MQTT: ");
-        Serial.println(BROKER_MQTT);
-        if (MQTT.connect(ID_MQTT)) 
-        {
-            Serial.println("Conectado com sucesso ao broker MQTT!");
-            MQTT.subscribe(TOPICO_SUBSCRIBE); 
-        } 
-        else
-        {
-            Serial.println("Falha ao reconectar no broker.");
-            Serial.println("Havera nova tentatica de conexao em 2s");
-            delay(2000);
-        }
-    }
+  Serial.println("");
+  Serial.println("----- MQTT Callback -----");
+
+  Serial.print("Mensagem Recebida no Topico: ");
+  Serial.println(TOPICO_SUBSCRIBE);
+
+  String mensagem;
+  for(int i = 0; i < length; i++) 
+  {
+      char caractere = (char)payload[i];  // Interpretar binário como char.
+      mensagem += caractere;
+  }
+
+  if (mensagem.equals("L"))
+  {
+      desligarRele();
+      estado_da_saida = '1'; 
+  }
+
+  if (mensagem.equals("D"))
+  {
+      ligarRele();
+      estado_da_saida = '0';
+  }
 }
 
- 
-//Função: envia ao Broker o estado atual do output 
-//Parâmetros: nenhum
-//Retorno: nenhum
-void EnviaEstadoOutputMQTT(void)
-{
-    if (EstadoSaida == '0')
-      MQTT.publish(TOPICO_PUBLISH, "D");
-    if (EstadoSaida == '1')
-      MQTT.publish(TOPICO_PUBLISH, "L");
-    if (EstadoSaida == '2')
-        MQTT.publish(TOPICO_PUBLISH, "R"); // se foi reiniciado manda R para receber estado atual
-        MQTT.publish(TOPICO_PUBLISH_IP, IP);
- 
-    //Serial.println("- Estado da saida D0 enviado ao broker!");
-    delay(500);
+void publicarTopicos(){
+  enviarStatusInicial();
+  enviarStatusBotao();
 }
 
-// Função: Reconecta-se ao WiFi
-// Parâmetros: nenhum
-// Retorno: nenhum
-void reconectWiFi() 
-{
-    //se já está conectado a rede WI-FI, nada é feito. 
-    //Caso contrário, são efetuadas tentativas de conexão
-    if (WiFi.status() == WL_CONNECTED)
-        return;
-         
-    WiFi.begin(SSID, PASSWORD); // Conecta na rede WI-FI
-     
-    while (WiFi.status() != WL_CONNECTED) 
-    {
-        counwf = counwf +1;
-      
-        
-        if( counwf % 40 == 0 ){
-
-             if(digitalRead(D0) == HIGH){
-             
-                   digitalWrite(D0, LOW); 
-             }else{
-
-              digitalWrite(D0, HIGH); 
-              
-              }
-          
-        }
-
-        if(counwf == 1000){
-             ESP.restart();
-        }
-        
-      
-        delay(100);
-    
+/* Função:  Ele publica no topico o status inicial, assim que o Arduino é ligado.
+ *          Vai mandar também na primeira vez o IP e o MAC.
+ *          Ele envia o Status que foi gerado no método StatusAndon().
+ */
+void enviarStatusInicial(){
+  if (estado_da_saida == '2'){
+    MQTT_CONTROLLER.publish(TOPICO_PUBLISH, "R"); // Se foi reiniciado, envio R para atualizar o status.
+    enviarIpMac_Arduino();  // Envio o IP e o MAC uma vez... Quando o estado inicial é R.
     }
-   
-    Serial.println();
-    Serial.println(TOPICO_PUBLISH);
-    Serial.print("Conectado com sucesso na rede ");
-    Serial.print(SSID);
-    Serial.println("IP obtido: ");
-    Serial.println(WiFi.localIP());
-
-
-    
-
+    delay(100);
 }
- 
-//Função: verifica o estado das conexões WiFI e ao broker MQTT. 
-//        Em caso de desconexão (qualquer uma das duas), a conexão
-//        é refeita.
-//Parâmetros: nenhum
-//Retorno: nenhum
-void VerificaConexoesWiFIEMQTT(void)
-{
-    if (!MQTT.connected()) {
 
-        if (WiFi.status() != WL_CONNECTED){
-          
-           reconectWiFi(); //se não há conexão com o WiFI, a conexão é refeita
-        
-        }else{
-          
-             reconnectMQTT(); //se não há conexão com o Broker, a conexão é refeita
-     
-         }
-    
+/* Função:  Publicar mensagem ao topico no MQTT Broker com o Status do Botão
+ *          Ele envia o Status que foi gerado no método StatusAndon().
+ */
+void enviarStatusBotao(){
+  if (estado_da_saida == '0') MQTT_CONTROLLER.publish(TOPICO_PUBLISH, "D");
+  if (estado_da_saida == '1') MQTT_CONTROLLER.publish(TOPICO_PUBLISH, "L");
+  delay(500);
+}
+
+/* Sintaxe do Publish: 
+ * MQTT_CLIENT_NAME.publish(String(nome_do_topico), [Type?] mensagem_a_ser_enviada.c_str());
+ * Onde a "Mensagem a ser enviada" eh passada por referencia. Ou seja, a variavel deve existir.
+ */
+void enviarIpMac_Arduino(){
+  // Create MAC and IP Variable with Data that will be sent to the respective MQTT Topics.
+  String ip_mac = WiFi.localIP().toString() + " - " + WiFi.macAddress();
+
+  /* https://en.cppreference.com/w/cpp/string/basic_string/c_str
+    * Usando esse metodo, destroi a variavel caso tenha algum valor, 
+    * e armazena somente o ponteiro na memoria da variavel. 
+    * Ou seja: Cria uma referencia para acessar uma variavel na memoria.
+    */
+
+  // Publicar os Topicos no MQTT Broker - Topico: String e Mensagem: Referencia em outra variavel.
+  Serial.print("Enviando o Topico: ");
+  Serial.println(MQTT_TOPIC_IP_MAC);
+  delay(100);
+
+  // Enviar o IP e o MAC em um Topico apenas.
+  MQTT_CONTROLLER.publish(MQTT_TOPIC_IP_MAC, ip_mac.c_str());  // Pointer to Variables
+}
+
+////////////////////////////////////////  MQTT - Fim das Funções Relacionadas ao MQTT  ////////////////////////////////////////
+void desligarRele(){
+   digitalWrite(RELE, LOW); // Desligar o RELE
+}
+
+void ligarRele(){
+   digitalWrite(RELE, HIGH); // Ligar o RELE
+}
+
+/* 
+ * Método: rebootESP
+ * Descrição: Esse método tenta reiniciar o ESP8266.
+ * Parâmetros: nenhum
+ * Retorno: nenhum
+ */
+void rebootESP() {
+  Serial.print(" -> Entering Reboot ESP Mode. Will reboot in 3 Seconds");
+
+  delay(2000);
+  digitalWrite(RST_PIN, LOW);
+  delay(2000);
+  digitalWrite(RST_PIN, HIGH);
+
+  // Se não rebootou, falhou o reboot aqui nessa etapa.
+  delay(2000);
+  Serial.println(" ESP Reboot Failed. Continuing...");
+  }
+
+/* 
+ * Método: VerificaConexoes
+ * Descrição: Esse método verifica as conexões com o WiFi e o MQTT Broker.
+ * Parâmetros: nenhum
+ * Retorno: nenhum
+ */
+void VerificaConexoes() {
+  if(WiFi.status() != WL_CONNECTED){
+    initWiFi();
     }
-    
+  if (!MQTT_CONTROLLER.connected()) {
+    initMQTT(); 
+    }
 }
 
-void AvisoButton(void)
-{ 
-      Serial.println(digitalRead(D5));
-       Serial.println(digitalRead(D2));
-     
-     if (digitalRead(D5) == HIGH && digitalRead(D2) == LOW) {
+/* 
+ * Método: StatusBotao
+ * Descrição: Esse método verifica se o botão do ANDON está pressionado
+ *            Ele utiliza os defines RELE (PIN D0) e BUTTON (PIN D5).
+ *            Este é o método principal que trata os acionamentos do ANDON.
+ * Status:  - Estado de Saída 0: Botão do ANDON foi Pressionado.
+ */
+void StatusBotao(){ 
 
-           // Serial.println("precionado");
+  delay(500);
 
-          //  if (!MQTT.connected()) {
-       
-              // ESP.restart();
+  Serial.println("----- Status do ANDON -----");
+  Serial.print("Status do RELE, BUTTON: ");
+  Serial.print(digitalRead(D2));
+  Serial.print(", ");
+  Serial.println(digitalRead(D5));
 
-         // }
-
-
-          quant = quant + 1;
-          delay(500);      
+  // Se o botão está pressionado.
+  if (digitalRead(BUTTON) == LOW) {
+          tempo_pressionado ++;  
+          delay(500);
       }
 
-      
-       
-
-      if( quant == 2 && digitalRead(D5) == HIGH ){
-        
-                  digitalWrite(D0, HIGH);           
-                  EstadoSaida = '0';
-                //  Serial.println("LED Turned ON"); 
-                  quant = 0;
-                
-        
-       }else{
-
-          if( digitalRead(D5) == LOW ){
-            quant = 0;
-          }
-
-       }
-
+  // Se o botão ficou pressionado por tempo suficiente
+  if( tempo_pressionado == 2 && digitalRead(BUTTON) == LOW ){
+    // Ligar o RELE para ativar a sirene.
+    ligarRele();           
+    estado_da_saida = '0';
+    Serial.println(" -> ANDON acionado! "); 
+    tempo_pressionado = 0;
+    } else {
+      // Se soltar o botão pressionado
+      if( digitalRead(BUTTON) == HIGH ){
+        tempo_pressionado = 0;
+    }
+  }
 }
-
-
-void InitOutput(void)
-{
-    //IMPORTANTE: o Led já contido na placa é acionado com lógica invertida (ou seja,
-    //enviar HIGH para o output faz o Led apagar / enviar LOW faz o Led acender)
-    pinMode(D0, OUTPUT);
-    digitalWrite(D0, HIGH);  
-    pinMode(D5, INPUT_PULLUP); 
-    pinMode(D2, INPUT_PULLUP); 
-    
-        
-}
- 
