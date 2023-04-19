@@ -33,7 +33,7 @@ AsyncWebServer server(80);
 void setup()
 {
   // Configurar taxa de transferência
-  Serial.begin(9600); // Velocidade padrão
+  Serial.begin(115200); // Velocidade padrão
   // Serial.begin(115200);
   Serial.println("Monitoramento de Temperatura com sensor BMP180.");
 
