@@ -8,16 +8,17 @@
 #define TOPICO_SUBSCRIBE    "ENV/BCTA6969"                      // Topico de Escuta
 #define TOPICO_PUBLISH      "REC/BCTA6969"                      // Topico de Envio
 #define MQTT_CLIENT_NAME    "BCTA6969"                          // ID MQTT p/ identificar a sessão.
+
 #define MQTT_TOPIC_IP_MAC   "REC/" MQTT_CLIENT_NAME "/_ip_mac"  // Topico de Envio do IP e MAC
 #define RELE                16                                  // GPIO16 - PIN D0
 #define BUTTON              14                                  // GPIO14 - PIN D5
 #define RST_PIN             12                                  // GPIO12 - PIN D6
 
 /* ----- Constantes ----- */
-const char* ssid = "ANDON";                       // Nome da rede WI-FI que deseja se conectar
-const char* password = "andon@aro";               // Senha da rede WI-FI que deseja se conectar
-const char* mqtt_server = "andon.alufrost.com";   // URL do Broker MQTT [IP: 192.168.1.97]
-const int mqtt_port = 1883;                       // Porta do Broker MQTT
+const char* ssid = "ANDON";                                // Nome da rede WI-FI que deseja se conectar
+const char* password = "andon@aro";                        // Senha da rede WI-FI que deseja se conectar
+const char* mqtt_server = "andon.simplifysystem.com.br";   // URL do Broker MQTT [IP: 192.168.1.97]
+const int mqtt_port = 1883;                                // Porta do Broker MQTT
 
 /* ----- Global Variables ----- */
 char estado_da_saida = '2';                       // Variável que armazena o estado atual da saída.
