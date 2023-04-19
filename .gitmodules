@@ -1,0 +1,3 @@
+[submodule "andon_v3"]
+	path = andon_v3
+	url = https://RaulChiarella@bitbucket.org/arotubi/andon_arduino.git
