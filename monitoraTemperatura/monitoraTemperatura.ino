@@ -4,6 +4,7 @@
  *  Módulo: WiFi ESP8266 NodeMCU
  *  Conexão: 3.3V VIN
  *  Importante: Não conectar acima de 5V pois senão o sensor poderá ser danificado.
+ *  Autor: Raul Chiarella
  */
 
 // Bibliotecas para se comunicar com a placa
