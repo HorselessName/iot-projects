@@ -36,6 +36,7 @@ For this fully to work, you will need:
 
 - A API that handles communication with the MQTT Protocol.
 - [ESP8266 WiFi Library](https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/readme.html)
+  - Important: For this to be functional on ESP8266, we recommend you to install ESP8266 Community on V2.4.0.
 - [The Official MQTT Library for using MQTT Protocol messages](https://www.arduino.cc/reference/en/libraries/pubsubclient/)
 
 The REST API part is a bit more complicated. Here are some useful links that can help you understand its architecture a little better, and also help you choose your language/library of choice:
